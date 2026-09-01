@@ -294,7 +294,8 @@
   </style>
 </head>
 <body>
-  <main>
+  <p id="loadingState" role="status" style="padding: 32px; text-align: center; color: #65717b">正在加载共享数据...</p>
+  <main id="app" hidden>
     <header>
       <div>
         <h1>待办清单 + 番茄钟</h1>
@@ -612,9 +613,15 @@
     $("workMinutes").onchange = () => { state.workMinutes = clampMinutes($("workMinutes").value, 1, 120); stopTimer(); resetSeconds(); save(); render(); };
     $("breakMinutes").onchange = () => { state.breakMinutes = clampMinutes($("breakMinutes").value, 1, 60); stopTimer(); resetSeconds(); save(); render(); };
 
-    ensureTimer();
-    render();
-    syncRemote();
+    async function init() {
+      await syncRemote();
+      ensureTimer();
+      render();
+      $("app").hidden = false;
+      $("loadingState").hidden = true;
+    }
+
+    init();
     setInterval(syncRemote, 2000);
   </script>
 </body>
