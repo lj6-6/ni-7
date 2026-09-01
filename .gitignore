@@ -1,0 +1,4 @@
+.env
+outputs/todo-pomodoro-state.json
+node_modules/
+work/
