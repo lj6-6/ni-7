@@ -28,6 +28,32 @@
       background: var(--bg);
     }
 
+    .admin-login {
+      min-height: 36px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    dialog {
+      width: min(360px, calc(100% - 32px));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      color: var(--text);
+      background: var(--panel);
+      box-shadow: 0 18px 50px rgb(31 36 40 / 20%);
+    }
+
+    dialog::backdrop { background: rgb(31 36 40 / 28%); }
+    dialog h2 { margin: 0 0 14px; }
+    dialog p { line-height: 1.5; }
+
+    .dialog-form { display: grid; gap: 14px; }
+    .dialog-form input { width: 100%; }
+    .dialog-actions { display: flex; justify-content: end; gap: 8px; }
+    .dialog-error { min-height: 21px; color: #a33b2f; font-size: 14px; }
+
     .loading-screen {
       min-height: 100vh;
       display: grid;
@@ -339,7 +365,10 @@
         <h1>待办清单 + 番茄钟</h1>
         <p class="mode">所有访问者共享同一份任务和计时状态</p>
       </div>
-      <p class="date" id="today"></p>
+      <div>
+        <p class="date" id="today"></p>
+        <button class="admin-login" id="adminLogin" type="button">管理员登录</button>
+      </div>
     </header>
 
     <div class="layout">
@@ -405,16 +434,41 @@
     </div>
   </main>
 
+  <dialog id="loginDialog">
+    <form class="dialog-form" id="loginForm" method="dialog">
+      <h2>管理员登录</h2>
+      <input id="adminPassword" type="password" placeholder="输入管理员密码" autocomplete="current-password" required>
+      <p class="dialog-error" id="loginError" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="cancelLogin" type="button">取消</button>
+        <button class="primary" type="submit">登录</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="permissionDialog">
+    <form class="dialog-form" method="dialog">
+      <p>你是个乐乐，无资格修改。</p>
+      <div class="dialog-actions">
+        <button class="primary" type="submit">知道了</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     const $ = (id) => document.getElementById(id);
-    const supabaseUrl = "https://npknoxfwivyqcbzpxvyt.supabase.co/rest/v1";
+    const supabaseProjectUrl = "https://npknoxfwivyqcbzpxvyt.supabase.co";
+    const supabaseUrl = `${supabaseProjectUrl}/rest/v1`;
     const supabaseKey = "sb_publishable_ziDUBkW8j3N0sUWcutYHDg_tw0hwkjp";
     const stateUrl = `${supabaseUrl}/todo_pomodoro_state`;
+    const authUrl = `${supabaseProjectUrl}/auth/v1/token?grant_type=password`;
+    const adminEmail = "lj6-6@users.noreply.github.com";
     const fallback = { tasks: [], focusId: null, rounds: 0, mode: "work", workMinutes: 25, breakMinutes: 5, timerRunning: false, timerEndAt: null, timerSecondsLeft: null, updatedAt: 0 };
     let state = normalize({ ...fallback });
     let filter = "all";
     let timer = null;
     let syncing = false;
+    let adminToken = "";
 
     function normalize(data) {
       data.tasks = Array.isArray(data.tasks) ? data.tasks : [];
@@ -432,6 +486,12 @@
       saveRemote();
     }
 
+    function canEdit() {
+      if (adminToken) return true;
+      $("permissionDialog").showModal();
+      return false;
+    }
+
     function request(input, options = {}, timeout = 5000) {
       return Promise.race([
         fetch(input, options),
@@ -440,13 +500,13 @@
     }
 
     async function saveRemote(force = false) {
-      if (location.protocol === "file:" || (syncing && !force)) return;
+      if (location.protocol === "file:" || !adminToken || (syncing && !force)) return;
       try {
         await request(stateUrl, {
           method: "POST",
           headers: {
             apikey: supabaseKey,
-            Authorization: `Bearer ${supabaseKey}`,
+            Authorization: `Bearer ${adminToken}`,
             "Content-Type": "application/json",
             Prefer: "resolution=merge-duplicates,return=minimal"
           },
@@ -520,9 +580,16 @@
           <button class="icon-btn" type="button" title="设为专注任务">◎</button>
           <button class="icon-btn danger" type="button" title="删除任务">×</button>`;
         li.querySelector(".task-text").textContent = task.text;
-        li.querySelector("input").onchange = () => { task.done = !task.done; save(); render(); };
-        li.querySelectorAll("button")[0].onclick = () => { state.focusId = task.id; save(); render(); };
+        li.querySelector("input").onchange = () => {
+          if (!canEdit()) { renderTasks(); return; }
+          task.done = !task.done; save(); render();
+        };
+        li.querySelectorAll("button")[0].onclick = () => {
+          if (!canEdit()) return;
+          state.focusId = task.id; save(); render();
+        };
         li.querySelectorAll("button")[1].onclick = () => {
+          if (!canEdit()) return;
           state.tasks = state.tasks.filter((item) => item.id !== task.id);
           if (state.focusId === task.id) state.focusId = null;
           save(); render();
@@ -570,7 +637,7 @@
     function ensureTimer() {
       stopTimer();
       if (state.timerRunning && remainingSeconds() <= 0) {
-        finishRound();
+        finishRound(false);
         return;
       }
       if (!state.timerRunning) return;
@@ -578,7 +645,7 @@
     }
 
     function tickTimer() {
-      if (remainingSeconds() <= 0) finishRound();
+      if (remainingSeconds() <= 0) finishRound(false);
       else renderTimer();
     }
 
@@ -593,7 +660,11 @@
       osc.start(); osc.stop(ctx.currentTime + 0.18);
     }
 
-    function finishRound() {
+    function finishRound(prompt = true) {
+      if (!adminToken) {
+        if (prompt) canEdit();
+        return;
+      }
       stopTimer();
       if (state.mode === "work") state.rounds += 1;
       state.mode = state.mode === "work" ? "break" : "work";
@@ -605,6 +676,7 @@
 
     $("taskForm").onsubmit = (event) => {
       event.preventDefault();
+      if (!canEdit()) return;
       const text = $("taskInput").value.trim();
       if (!text) return;
       state.tasks.unshift({ id: crypto.randomUUID(), text, done: false });
@@ -622,6 +694,7 @@
 
     document.querySelectorAll("[data-mode]").forEach((button) => {
       button.onclick = () => {
+        if (!canEdit()) return;
         stopTimer();
         state.mode = button.dataset.mode;
         resetSeconds();
@@ -630,6 +703,7 @@
     });
 
     $("clearDone").onclick = () => {
+      if (!canEdit()) return;
       const doneIds = new Set(state.tasks.filter((task) => task.done).map((task) => task.id));
       state.tasks = state.tasks.filter((task) => !task.done);
       if (doneIds.has(state.focusId)) state.focusId = null;
@@ -637,6 +711,7 @@
     };
 
     $("startPause").onclick = () => {
+      if (!canEdit()) return;
       if (state.timerRunning) {
         state.timerSecondsLeft = remainingSeconds();
         state.timerRunning = false;
@@ -652,11 +727,52 @@
       save(); renderTimer();
     };
 
-    $("resetTimer").onclick = () => { stopTimer(); resetSeconds(); save(); render(); };
+    $("resetTimer").onclick = () => {
+      if (!canEdit()) return;
+      stopTimer(); resetSeconds(); save(); render();
+    };
     $("finishTimer").onclick = finishRound;
 
-    $("workMinutes").onchange = () => { state.workMinutes = clampMinutes($("workMinutes").value, 1, 120); stopTimer(); resetSeconds(); save(); render(); };
-    $("breakMinutes").onchange = () => { state.breakMinutes = clampMinutes($("breakMinutes").value, 1, 60); stopTimer(); resetSeconds(); save(); render(); };
+    $("workMinutes").onchange = () => {
+      if (!canEdit()) { renderTimer(); return; }
+      state.workMinutes = clampMinutes($("workMinutes").value, 1, 120); stopTimer(); resetSeconds(); save(); render();
+    };
+    $("breakMinutes").onchange = () => {
+      if (!canEdit()) { renderTimer(); return; }
+      state.breakMinutes = clampMinutes($("breakMinutes").value, 1, 60); stopTimer(); resetSeconds(); save(); render();
+    };
+
+    $("adminLogin").onclick = () => {
+      if (adminToken) {
+        adminToken = "";
+        $("adminLogin").textContent = "管理员登录";
+        return;
+      }
+      $("loginError").textContent = "";
+      $("adminPassword").value = "";
+      $("loginDialog").showModal();
+      $("adminPassword").focus();
+    };
+
+    $("cancelLogin").onclick = () => $("loginDialog").close();
+    $("loginForm").onsubmit = async (event) => {
+      event.preventDefault();
+      try {
+        const response = await request(authUrl, {
+          method: "POST",
+          headers: { apikey: supabaseKey, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: adminEmail, password: $("adminPassword").value })
+        });
+        if (!response.ok) throw new Error("login failed");
+        const result = await response.json();
+        if (!result.access_token) throw new Error("login failed");
+        adminToken = result.access_token;
+        $("loginDialog").close();
+        $("adminLogin").textContent = "退出管理员";
+      } catch {
+        $("loginError").textContent = "密码不正确，请重试。";
+      }
+    };
 
     async function init() {
       await syncRemote();

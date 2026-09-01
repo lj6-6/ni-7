@@ -11,4 +11,12 @@
 
 本地测试仍可执行：`node outputs/server.js`。
 
+## 管理员权限
+
+1. 在 Supabase 的 Authentication → Users 中创建一个用户：
+   - Email：`lj6-6@users.noreply.github.com`
+   - Password：由你自己设置
+2. 重新执行 [`outputs/supabase.sql`](outputs/supabase.sql)，使匿名用户只能查看，只有这个邮箱对应的登录用户可以修改。
+3. 网页上的普通访问者不需要登录；你点击“管理员登录”后输入刚才设置的密码即可编辑。
+
 这里使用 Supabase 的 publishable/anon key 配合 RLS；不要把 `service_role` 密钥写入网页代码或提交到 GitHub。
