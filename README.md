@@ -5,7 +5,7 @@
 ## Supabase 初始化
 
 1. 在 Supabase 的 SQL Editor 中执行 [`outputs/supabase.sql`](outputs/supabase.sql)。
-2. 复制 `.env.example` 为 `.env`，填入项目 URL 和 `service_role` 密钥。
+2. 复制 `.env.example` 为 `.env`，填入项目 URL 和 publishable/anon key。
 3. 启动：`node outputs/server.js`
 4. 打开：`http://localhost:8788/todo-pomodoro.html`
 

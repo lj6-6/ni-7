@@ -3,6 +3,9 @@ const fs = require("fs");
 const path = require("path");
 
 const root = __dirname;
+if (typeof process.loadEnvFile === "function") {
+  try { process.loadEnvFile(path.join(root, "..", ".env")); } catch {}
+}
 const port = Number(process.env.PORT) || 8788;
 const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "");
 const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
