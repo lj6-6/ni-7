@@ -368,6 +368,9 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
+    const supabaseUrl = "https://npknoxfwivyqcbzpxvyt.supabase.co/rest/v1";
+    const supabaseKey = "sb_publishable_ziDUBkW8j3N0sUWcutYHDg_tw0hwkjp";
+    const stateUrl = `${supabaseUrl}/todo_pomodoro_state`;
     const fallback = { tasks: [], focusId: null, rounds: 0, mode: "work", workMinutes: 25, breakMinutes: 5, timerRunning: false, timerEndAt: null, timerSecondsLeft: null, updatedAt: 0 };
     let state = normalize({ ...fallback });
     let filter = "all";
@@ -393,7 +396,16 @@
     async function saveRemote(force = false) {
       if (location.protocol === "file:" || (syncing && !force)) return;
       try {
-        await fetch("/api/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) });
+        await fetch(stateUrl, {
+          method: "POST",
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates,return=minimal"
+          },
+          body: JSON.stringify({ id: 1, state, updated_at: new Date().toISOString() })
+        });
       } catch {}
     }
 
@@ -401,9 +413,13 @@
       if (location.protocol === "file:" || syncing) return;
       syncing = true;
       try {
-        const response = await fetch("/api/state", { cache: "no-store" });
+        const response = await fetch(`${stateUrl}?id=eq.1&select=state`, {
+          cache: "no-store",
+          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
+        });
         if (!response.ok) return;
-        const remote = normalize(await response.json());
+        const rows = await response.json();
+        const remote = normalize(rows[0]?.state || fallback);
         if (remote.updatedAt > state.updatedAt) {
           state = remote;
           ensureTimer();
