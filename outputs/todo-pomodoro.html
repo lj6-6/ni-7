@@ -432,10 +432,17 @@
       saveRemote();
     }
 
+    function request(input, options = {}, timeout = 5000) {
+      return Promise.race([
+        fetch(input, options),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("request timeout")), timeout))
+      ]);
+    }
+
     async function saveRemote(force = false) {
       if (location.protocol === "file:" || (syncing && !force)) return;
       try {
-        await fetch(stateUrl, {
+        await request(stateUrl, {
           method: "POST",
           headers: {
             apikey: supabaseKey,
@@ -452,7 +459,7 @@
       if (location.protocol === "file:" || syncing) return;
       syncing = true;
       try {
-        const response = await fetch(`${stateUrl}?id=eq.1&select=state`, {
+        const response = await request(`${stateUrl}?id=eq.1&select=state`, {
           cache: "no-store",
           headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
         });
